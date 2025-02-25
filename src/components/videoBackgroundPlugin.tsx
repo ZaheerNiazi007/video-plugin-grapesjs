@@ -28,7 +28,10 @@ export const videoBackgroundPlugin = grapesjs.plugins.add(
               loop: true,
               muted: false,
               playsinline: true,
-              src: "",
+              controls: true,
+              src:
+                getStoredVideoUrl() ||
+                "https://www.w3schools.com/html/mov_bbb.mp4",
             },
             style: {
               width: "100%",
@@ -157,6 +160,40 @@ export const videoBackgroundPlugin = grapesjs.plugins.add(
               label: "Description Color",
               name: "description-color",
             },
+            {
+              type: "button",
+              text: "Upload Video",
+              full: true,
+              command: (editor) => {
+                const input = document.createElement("input");
+                input.type = "file";
+                input.accept = "video/*";
+
+                input.addEventListener("change", async (event) => {
+                  const file = (event.target as HTMLInputElement).files?.[0];
+
+                  if (file) {
+                    const fileURL = URL.createObjectURL(file);
+                    storeVideoUrl(fileURL); // Store in localStorage
+
+                    const selectedComponent = editor.getSelected();
+                    if (selectedComponent) {
+                      const videoComponent =
+                        selectedComponent.findType("video")[0];
+                      if (videoComponent) {
+                        videoComponent.addAttributes({
+                          src: fileURL,
+                          controls: true,
+                        });
+                        editor.trigger("change"); // Update view
+                      }
+                    }
+                  }
+                });
+
+                input.click(); // Open file dialog
+              },
+            },
           ],
           init() {
             this.on("change:video-url", this.updateVideoSource);
@@ -182,8 +219,10 @@ export const videoBackgroundPlugin = grapesjs.plugins.add(
           },
           methods: {
             updateVideoSource() {
-              const videoUrl = this.get("video-url");
               const videoType = this.get("video-type");
+              const videoUrl = this.get("video-url");
+              const uploadedFile = this.get("upload-video"); // Uploaded file
+              console.log("uploadedFile", uploadedFile);
               const videoComponent = this.components().models.find(
                 (comp) =>
                   comp.get("tagName") === "video" ||
@@ -191,11 +230,42 @@ export const videoBackgroundPlugin = grapesjs.plugins.add(
               );
 
               if (videoComponent) {
-                if (videoType === "youtube" || videoType === "vimeo") {
+                if (uploadedFile) {
+                  // Convert uploaded file to a local URL
+                  const reader = new FileReader();
+                  reader.readAsDataURL(uploadedFile);
+
+                  reader.onload = () => {
+                    const fileURL = reader.result as string;
+
+                    // Store the video in local storage
+                    localStorage.setItem("uploadedVideo", fileURL);
+
+                    console.log("Stored Video URL:", fileURL);
+
+                    // Set the video element
+                    videoComponent.set("tagName", "video");
+                    videoComponent.addAttributes({
+                      src: fileURL,
+                      autoplay: true,
+                      loop: true,
+                      muted: false,
+                      playsinline: true,
+                      controls: true, // Enable controls for local videos
+                    });
+
+                    console.log("Uploaded Video URL:", fileURL); // Debugging purpose
+
+                    // Force GrapesJS to re-render the canvas
+                    if (this.view) {
+                      this.view.render();
+                    }
+                  };
+                } else if (videoType === "youtube" || videoType === "vimeo") {
                   const embedUrl =
                     videoType === "youtube"
-                      ? `https://www.youtube.com/embed/${videoUrl}?autoplay=1&mute=1&controls=1&loop=1&playlist=${videoUrl}&showinfo=0&rel=0&modestbranding=1`
-                      : `https://player.vimeo.com/video/${videoUrl}?autoplay=1&muted=1&loop=1&background=1&byline=0&title=0&badge=0`;
+                      ? `https://www.youtube.com/embed/${videoUrl}?autoplay=1&mute=1&controls=1`
+                      : `https://player.vimeo.com/video/${videoUrl}?autoplay=1&muted=1&loop=1`;
 
                   videoComponent.set("tagName", "iframe");
                   videoComponent.addAttributes({
@@ -204,19 +274,41 @@ export const videoBackgroundPlugin = grapesjs.plugins.add(
                     allowfullscreen: false,
                     allow: "autoplay; fullscreen; encrypted-media",
                   });
-                } else if (videoType === "video") {
-                  // For local video, use the path relative to the public folder
-                  const videoPath = `/videos/${videoUrl}`; // Assuming the video is in /public/videos/
-                  console.log("Setting video source:", videoPath);
-                  videoComponent.set("tagName", "video");
-                  videoComponent.addAttributes({
-                    src: videoPath,
-                    autoplay: true,
-                    loop: true,
-                    muted: false,
-                    playsinline: true,
-                    controls: false,
-                  });
+                } else {
+                  // Retrieve video from local storage if available
+                  const storedVideo = localStorage.getItem("uploadedVideo");
+
+                  if (storedVideo) {
+                    videoComponent.set("tagName", "video");
+                    videoComponent.addAttributes({
+                      src: storedVideo,
+                      autoplay: true,
+                      loop: true,
+                      muted: false,
+                      playsinline: true,
+                      controls: true,
+                    });
+
+                    console.log(
+                      "Loaded Video from Local Storage:",
+                      storedVideo
+                    );
+                  } else {
+                    videoComponent.set("tagName", "video");
+                    videoComponent.addAttributes({
+                      src: `/videos/${videoUrl}`,
+                      autoplay: true,
+                      loop: true,
+                      muted: false,
+                      playsinline: true,
+                      controls: false,
+                    });
+                  }
+                }
+
+                // Force GrapesJS to re-render the canvas
+                if (this.view) {
+                  this.view.render();
                 }
               }
             },
@@ -271,5 +363,13 @@ export const videoBackgroundPlugin = grapesjs.plugins.add(
         },
       },
     });
+    function storeVideoUrl(url: string) {
+      localStorage.setItem("uploadedVideo", url);
+    }
+
+    // Function to retrieve stored video URL
+    function getStoredVideoUrl(): string | null {
+      return localStorage.getItem("uploadedVideo");
+    }
   }
 );
